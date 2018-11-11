@@ -109,12 +109,6 @@ public class IntegrationConfiguration {
                 .build();
     }
 
-    /*
-     * @Bean Step exampleStep() { return stepBuilderFactory.get("st") .<String,
-     * String>chunk(5) .reader(itemReader(null)) .writer(i -> i.stream().forEach(j
-     * -> System.out.println(j))) .build(); }
-     */
-
     @Bean
     public Step step1() {
         return stepBuilderFactory.get("step1")
