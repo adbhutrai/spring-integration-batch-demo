@@ -10,9 +10,9 @@ import org.springframework.integration.config.EnableIntegration;
 @EnableIntegration
 @EnableBatchProcessing
 @IntegrationComponentScan
-public class SpringIntegrationDemo1Application {
+public class IntegrationDemo {
 
 	public static void main(String[] args) {
-		SpringApplication.run(SpringIntegrationDemo1Application.class, args);
+		SpringApplication.run(IntegrationDemo.class, args);
 	}
 }

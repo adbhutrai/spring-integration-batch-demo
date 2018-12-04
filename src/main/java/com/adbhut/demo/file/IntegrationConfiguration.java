@@ -2,6 +2,7 @@ package com.adbhut.demo.file;
 
 import java.io.File;
 
+import javax.persistence.EntityManagerFactory;
 import javax.sql.DataSource;
 
 import org.springframework.batch.core.Job;
@@ -13,6 +14,7 @@ import org.springframework.batch.core.configuration.annotation.StepScope;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.launch.support.SimpleJobLauncher;
 import org.springframework.batch.core.repository.JobRepository;
+import org.springframework.batch.core.step.tasklet.Tasklet;
 import org.springframework.batch.integration.launch.JobLaunchingGateway;
 import org.springframework.batch.item.database.BeanPropertyItemSqlParameterSourceProvider;
 import org.springframework.batch.item.database.JdbcBatchItemWriter;
@@ -30,16 +32,26 @@ import org.springframework.integration.annotation.MessagingGateway;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.dsl.IntegrationFlows;
+import org.springframework.integration.dsl.channel.MessageChannels;
 import org.springframework.integration.dsl.core.Pollers;
 import org.springframework.integration.dsl.file.Files;
+import org.springframework.integration.dsl.jpa.Jpa;
 import org.springframework.integration.handler.LoggingHandler;
+import org.springframework.integration.jpa.support.PersistMode;
+import org.springframework.messaging.MessageChannel;
 
+import com.adbhut.demo.file.batch.AccessService;
+import com.adbhut.demo.file.batch.AccessServiceImpl;
+import com.adbhut.demo.file.batch.ArchiveProductImportFileTasklet;
 import com.adbhut.demo.file.batch.JobCompletionNotificationListener;
 import com.adbhut.demo.file.batch.Person;
 import com.adbhut.demo.file.batch.PersonItemProcessor;
 
 @Configuration
 public class IntegrationConfiguration {
+    @Autowired
+    private EntityManagerFactory entityManagerFactory;
+    
     @Autowired
     private JobBuilderFactory jobBuilderFactory;
 
@@ -69,16 +81,16 @@ public class IntegrationConfiguration {
         simpleJobLauncher.setJobRepository(jobRepository);
         simpleJobLauncher.setTaskExecutor(new SyncTaskExecutor());
         JobLaunchingGateway jobLaunchingGateway = new JobLaunchingGateway(simpleJobLauncher);
-
         return jobLaunchingGateway;
     }
 
     @Bean
-    public IntegrationFlow integrationFlow(JobLaunchingGateway jobLaunchingGateway) {
-        return IntegrationFlows.from(Files.inboundAdapter(new File("c:/Users/adbhu/Desktop/csv"))
+    public IntegrationFlow integrationFlow(
+            @Value("${input.directory:c:/Users/adbhu/Desktop/csv}") String inputDirectory,
+            JobLaunchingGateway jobLaunchingGateway) {
+        return IntegrationFlows.from(Files.inboundAdapter(new File(inputDirectory))
                 .preventDuplicates(true)
                 .patternFilter("*.csv"),
-                // .filter(new SimplePatternFileListFilter("*.csv")),
                 c -> c.poller(Pollers.fixedRate(1000, 2000)
                         .maxMessagesPerPoll(1)))
                 .handle(fileMessageToJobRequest())
@@ -99,13 +111,40 @@ public class IntegrationConfiguration {
     @MessagingGateway(name = "notificationExecutionsListener", defaultRequestChannel = "stepExecutionsChannel")
     public interface NotificationExecutionListener extends StepExecutionListener {
     }
-
+    
+    @Bean
+    public IntegrationFlow pollingAdapterFlow() {
+        return IntegrationFlows
+            .from(Jpa.inboundAdapter(this.entityManagerFactory)
+                        .jpaQuery("select p from PersonEnitity p where p.accepted = 'N'"),
+                e -> e.poller(p -> p.fixedDelay(1000)))
+            .split()
+            //.channel(c -> c.queue("pollingResults"))
+            .handle("accessService", "process")
+            .handle(Jpa.outboundAdapter(this.entityManagerFactory)
+                    .flush(true)
+                    .flushSize(50)
+                    .persistMode(PersistMode.MERGE),
+                    e -> e.transactional())
+            .get();
+    }
+    
+    
+     @Bean
+    public AccessService accessService() {
+        return new AccessServiceImpl();
+    }
+    
+    
+    
+   
     @Bean
     Job personJob() {
         return jobBuilderFactory.get("personJob")
                 .incrementer(new RunIdIncrementer())
                 .listener(listener)
-                .start(step1())
+                .flow(step1())
+                .end()
                 .build();
     }
 
@@ -119,6 +158,14 @@ public class IntegrationConfiguration {
                 .build();
     }
 
+   /* @JobScope
+    @Bean
+    public Step step(@Value("#{jobParameters[file_name]}") String resource) {
+        return stepBuilderFactory.get("nextStep")
+                .tasklet(moveFileTasklet(resource))
+                .build();
+    }
+*/
     @Bean
     @StepScope
     public PersonItemProcessor processor() {
@@ -148,11 +195,18 @@ public class IntegrationConfiguration {
     public JdbcBatchItemWriter<Person> writer() {
         JdbcBatchItemWriter<Person> itemWriter = new JdbcBatchItemWriter<>();
         itemWriter.setDataSource(this.dataSource);
-        itemWriter.setSql("INSERT INTO people (first_name, last_name) VALUES (:firstName, :lastName)");
+        itemWriter.setSql("INSERT INTO people (first_name, last_name, accepted) VALUES (:firstName, :lastName, :accepted)");
         itemWriter.setItemSqlParameterSourceProvider(new BeanPropertyItemSqlParameterSourceProvider<>());
         itemWriter.afterPropertiesSet();
 
         return itemWriter;
     }
 
+    @Bean
+    @StepScope
+    Tasklet moveFileTasklet(String resource) {
+        ArchiveProductImportFileTasklet moveFileTasklet = new ArchiveProductImportFileTasklet();
+        moveFileTasklet.setInputFile(resource);
+        return moveFileTasklet;
+    }
 }

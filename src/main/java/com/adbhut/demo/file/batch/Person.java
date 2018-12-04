@@ -4,6 +4,7 @@ public class Person {
 
     private String lastName;
     private String firstName;
+    private String accepted;
 
     public Person() {
     }
@@ -11,6 +12,7 @@ public class Person {
     public Person(String firstName, String lastName) {
         this.firstName = firstName;
         this.lastName = lastName;
+        this.accepted="N";
     }
 
     public void setFirstName(String firstName) {
@@ -32,6 +34,14 @@ public class Person {
     @Override
     public String toString() {
         return "firstName: " + firstName + ", lastName: " + lastName;
+    }
+
+    public String getAccepted() {
+        return accepted;
+    }
+
+    public void setAccepted(String accepted) {
+        this.accepted = accepted;
     }
 
 }
