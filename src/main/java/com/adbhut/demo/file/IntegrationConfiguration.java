@@ -32,19 +32,18 @@ import org.springframework.integration.annotation.MessagingGateway;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.dsl.IntegrationFlows;
-import org.springframework.integration.dsl.channel.MessageChannels;
 import org.springframework.integration.dsl.core.Pollers;
 import org.springframework.integration.dsl.file.Files;
 import org.springframework.integration.dsl.jpa.Jpa;
 import org.springframework.integration.handler.LoggingHandler;
 import org.springframework.integration.jpa.support.PersistMode;
-import org.springframework.messaging.MessageChannel;
 
 import com.adbhut.demo.file.batch.AccessService;
 import com.adbhut.demo.file.batch.AccessServiceImpl;
 import com.adbhut.demo.file.batch.ArchiveProductImportFileTasklet;
 import com.adbhut.demo.file.batch.JobCompletionNotificationListener;
 import com.adbhut.demo.file.batch.Person;
+import com.adbhut.demo.file.batch.PersonEnitity;
 import com.adbhut.demo.file.batch.PersonItemProcessor;
 
 @Configuration
@@ -120,10 +119,10 @@ public class IntegrationConfiguration {
                 e -> e.poller(p -> p.fixedDelay(1000)))
             .split()
             //.channel(c -> c.queue("pollingResults"))
-            .handle("accessService", "process")
+            .handle(PersonEnitity.class, (p, h) -> accessService().process(p))
             .handle(Jpa.outboundAdapter(this.entityManagerFactory)
                     .flush(true)
-                    .flushSize(50)
+                    .flushSize(2)
                     .persistMode(PersistMode.MERGE),
                     e -> e.transactional())
             .get();
