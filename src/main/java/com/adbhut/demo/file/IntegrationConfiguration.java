@@ -1,6 +1,7 @@
 package com.adbhut.demo.file;
 
 import java.io.File;
+import java.util.concurrent.Executor;
 
 import javax.persistence.EntityManagerFactory;
 import javax.sql.DataSource;
@@ -32,11 +33,13 @@ import org.springframework.integration.annotation.MessagingGateway;
 import org.springframework.integration.annotation.ServiceActivator;
 import org.springframework.integration.dsl.IntegrationFlow;
 import org.springframework.integration.dsl.IntegrationFlows;
+import org.springframework.integration.dsl.channel.MessageChannels;
 import org.springframework.integration.dsl.core.Pollers;
 import org.springframework.integration.dsl.file.Files;
 import org.springframework.integration.dsl.jpa.Jpa;
 import org.springframework.integration.handler.LoggingHandler;
 import org.springframework.integration.jpa.support.PersistMode;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import com.adbhut.demo.file.batch.AccessService;
 import com.adbhut.demo.file.batch.AccessServiceImpl;
@@ -120,12 +123,25 @@ public class IntegrationConfiguration {
             .split()
             //.channel(c -> c.queue("pollingResults"))
             .handle(PersonEnitity.class, (p, h) -> accessService().process(p))
+            .resequence()
+            .aggregate()
             .handle(Jpa.outboundAdapter(this.entityManagerFactory)
                     .flush(true)
                     .flushSize(2)
                     .persistMode(PersistMode.MERGE),
                     e -> e.transactional())
             .get();
+    }
+    
+    @Bean
+    public Executor taskExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(2);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(500);
+        executor.setThreadNamePrefix("person-process");
+        executor.initialize();
+        return executor;
     }
     
     
